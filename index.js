@@ -1,65 +1,83 @@
 console.log("Server starting...");
-const express = require('express');
-const multer = require('multer');
-const cors = require('cors');
-const vision = require('@google-cloud/vision');
-const path = require('path');
-const sharp = require('sharp');
-const fs = require('fs');
-require('dotenv').config();
-const { OpenAI } = require('openai');
 
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY, 
-});
+const express = require("express");
+const multer = require("multer");
+const cors = require("cors");
+const vision = require("@google-cloud/vision");
+const path = require("path");
+const sharp = require("sharp");
+const fs = require("fs");
+const { OpenAI } = require("openai");
+require("dotenv").config();
 
-
-// Initialize express app
 const app = express();
 app.use(cors());
 
-// Set up Multer for handling file uploads
-const upload = multer({ dest: 'uploads/' });
+// Multer config: uploads folder
+const upload = multer({ dest: "uploads/" });
 
-// Configure Google Vision API client
+// Google Cloud Vision client
 const client = new vision.ImageAnnotatorClient({
-  keyFilename: path.join(__dirname, 'google-vision-key.json'),
+  keyFilename: path.join(__dirname, "google-vision-key.json"),
 });
 
-// Route: Upload a scanned essay and run OCR
-app.post('/upload', upload.single('file'), async (req, res) => {
+// OpenAI GPT client
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+// Upload and OCR route
+app.post("/upload", upload.single("file"), async (req, res) => {
   try {
     const inputPath = req.file.path;
     const outputPath = `uploads/processed-${Date.now()}.png`;
 
-    // Preprocess: convert to grayscale and resize
+    // 1. Preprocess the image
     await sharp(inputPath)
       .grayscale()
-      .resize({ width: 1200 }) // Increased for better OCR interpretation
-      .normalize()              // Improves contrast
-      .sharpen()                // Makes edges clearer
+      .resize(1000)
       .toFile(outputPath);
 
-    const [result] = await client.textDetection(outputPath);
-    const rawText = result.fullTextAnnotation?.text || 'No text detected.';
-    const cleanedText = rawText.replace(/\n+/g, ' '); // replaces all \n with a space
+    // 2. Extract text using Google Vision
+    const [result] = await client.documentTextDetection(outputPath);
+    const rawText = result.fullTextAnnotation?.text || "No text detected.";
+    const cleanedText = rawText.replace(/\n+/g, " ").replace(/\s+/g, " ").trim();
 
+    // 3. Use GPT-4 to correct grammar, spelling, punctuation
+    const gptResponse = await openai.chat.completions.create({
+      model: "gpt-4",
+      messages: [
+        {
+          role: "system",
+          content: "You are a helpful assistant that corrects grammar, punctuation, and spelling errors in OCR-transcribed essays without changing meaning.",
+        },
+        {
+          role: "user",
+          content: cleanedText,
+        },
+      ],
+      temperature: 0.3,
+    });
 
-    // Clean up both raw and processed images
+    const correctedText = gptResponse.choices[0].message.content;
+
+    // 4. Clean up temp files
     fs.unlinkSync(inputPath);
     fs.unlinkSync(outputPath);
 
-    res.json({ text: cleanedText });
+    // 5. Respond with both raw and corrected text
+    res.json({
+      rawText: cleanedText,
+      correctedText,
+    });
   } catch (err) {
-    console.error('OCR error:', err);
-    res.status(500).json({ error: 'OCR failed' });
+    console.error("OCR or GPT Error:", err.message || err);
+    res.status(500).json({ error: "OCR or GPT processing failed" });
   }
 });
-
 
 // Start the server
 const PORT = 5000;
 app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`✅ Server running on http://localhost:${PORT}`);
 });
