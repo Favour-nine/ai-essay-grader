@@ -1,0 +1,40 @@
+{
+  "name": "Real_Test",
+  "criteria": [
+    {
+      "title": "Content Historical Accuracy",
+      "range": [
+        20,
+        100
+      ]
+    },
+    {
+      "title": "Nuanced Understanding and Thoughtful Engagement ",
+      "range": [
+        20,
+        100
+      ]
+    },
+    {
+      "title": "Structure & Organization",
+      "range": [
+        20,
+        100
+      ]
+    },
+    {
+      "title": "Language Use & Style",
+      "range": [
+        20,
+        100
+      ]
+    },
+    {
+      "title": "Perspective & Voice",
+      "range": [
+        20,
+        100
+      ]
+    }
+  ]
+}

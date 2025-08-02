@@ -1,0 +1,33 @@
+{
+  "name": "Realest_Test",
+  "criteria": [
+    {
+      "title": "Historically accurate and appropriately contextualized",
+      "range": [
+        5,
+        25
+      ]
+    },
+    {
+      "title": "Shows nuanced understanding and thoughtful engagement",
+      "range": [
+        5,
+        25
+      ]
+    },
+    {
+      "title": "Structure & Organization",
+      "range": [
+        5,
+        25
+      ]
+    },
+    {
+      "title": "Language Use & Style",
+      "range": [
+        5,
+        25
+      ]
+    }
+  ]
+}
