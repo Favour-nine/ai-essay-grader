@@ -306,25 +306,20 @@ app.post("/generate-grade", async (req, res) => {
   }
 
   try {
-    // Describe criteria with 1–5 scale
-    const criteriaDescriptions = rubric.criteria.map((c, i) => {
-      return `Criterion ${i + 1}: "${c.title}" — score from 1 to 5`;
-    }).join("\n");
-
-    const gradingPrompt = `
-You are an AI essay grading assistant.
+    const gradingPrompt = `You are an AI essay grading assistant.
 
 Given the essay and rubric below, rate each criterion from 1 to 5.
-Respond strictly with a JSON object using EXACTLY the original rubric titles as keys (no quotes, no prefixes, no criterion numbers). Example: { "Clarity": 3, "Structure": 4 }
-Do NOT include "Criterion 1:" or any prefixes. Use only the rubric titles verbatim.
-
+Respond strictly with a JSON object using EXACTLY the original rubric titles as keys. Each key must have an object with "score" (number) and "reason" (a short explanation). Example:
+{
+  "Clarity": { "score": 3, "reason": "Some vague phrasing and inconsistent tone." },
+  "Structure": { "score": 4, "reason": "Well organized but lacks clear transitions." }
+}
 
 Essay:
 ${essayText}
 
 Rubric:
-${criteriaDescriptions}
-    `.trim();
+${rubric.criteria.map((c, i) => `Criterion ${i + 1}: "${c.title}" — score from 1 to 5`).join("\n")}`;
 
     const result = await openai.chat.completions.create({
       model: "gpt-4",
@@ -338,55 +333,42 @@ ${criteriaDescriptions}
     const rawReply = result.choices[0].message.content.trim();
     console.log("GPT raw response:", rawReply);
 
-    // Try to extract JSON from GPT response
-    const rawJsonMatch = rawReply.match(/\{[\s\S]*?\}/);
+    const rawJsonMatch = rawReply.match(/\{[\s\S]*\}/);
     if (!rawJsonMatch) throw new Error("No valid JSON found in GPT response.");
 
-    const rawScores = JSON.parse(rawJsonMatch[0]);
-
-
+    const rationaleWithScores = JSON.parse(rawJsonMatch[0]);
     const expandedScores = {};
+    const rationale = {};
 
-    // Normalize function (lowercase, remove non-alphanumeric)
     const normalizeKey = (s) => s.toLowerCase().replace(/[^a-z0-9]/gi, "");
-    const gptKeys = Object.keys(rawScores);
-
-    console.log("Rubric Titles:", rubric.criteria.map(c => c.title));
-    console.log("GPT Keys:", gptKeys);
+    const gptKeys = Object.keys(rationaleWithScores);
 
     rubric.criteria.forEach((c) => {
       const expectedKey = normalizeKey(c.title);
-
-      // Find best match from GPT keys
       const matchKey = gptKeys.find(k => normalizeKey(k) === expectedKey);
+      if (!matchKey) throw new Error(`Could not match rubric criterion "${c.title}" in GPT response.`);
 
-      if (!matchKey) {
-        throw new Error(`Could not match rubric criterion "${c.title}" in GPT response.`);
+      const gptEntry = rationaleWithScores[matchKey];
+      if (!gptEntry || typeof gptEntry.score !== "number" || !gptEntry.reason) {
+        throw new Error(`Invalid entry for "${c.title}". Got: ${JSON.stringify(gptEntry)}`);
       }
 
-      const gptScore = rawScores[matchKey];
       const min = c.range[0];
       const max = c.range[1];
-
-      if (typeof gptScore !== "number" || isNaN(gptScore)) {
-        throw new Error(`Invalid score for "${c.title}". Got: ${gptScore}`);
-      }
-
-      const expanded = ((gptScore - 1) / 4) * (max - min) + min;
+      const expanded = ((gptEntry.score - 1) / 4) * (max - min) + min;
       expandedScores[c.title] = Math.round(expanded);
+      rationale[c.title] = gptEntry.reason;
     });
 
-
     res.json({
-      gptScores: rawScores,
+      gptScores: rationaleWithScores,
       expanded: expandedScores,
+      rationale
     });
 
   } catch (err) {
-    console.error("Error generating normalized grade:", err);
-    res.status(500).json({
-      error: err.message || "Failed to generate or normalize grade."
-    });
+    console.error("Error generating rationale grade:", err);
+    res.status(500).json({ error: err.message || "Failed to generate rationale grade." });
   }
 });
 
