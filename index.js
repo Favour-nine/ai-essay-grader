@@ -15,6 +15,9 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+
 // Store uploads temporarily in "temp/"
 const upload = multer({ dest: "temp/" });
 
@@ -221,13 +224,44 @@ app.get("/essays/:folder", (req, res) => {
 // GET /essay/:folder/:filename
 app.get("/essay/:folder/:filename", (req, res) => {
   const { folder, filename } = req.params;
-  const filePath = path.join(__dirname, "uploads", folder, filename);
+  const essayPath = path.join(__dirname, "uploads", folder, filename);
 
-  if (!fs.existsSync(filePath)) return res.status(404).json({ error: "File not found" });
+  if (!fs.existsSync(essayPath)) {
+    return res.status(404).json({ error: "Essay file not found" });
+  }
 
-  fs.readFile(filePath, "utf8", (err, content) => {
-    if (err) return res.status(500).json({ error: "Failed to read file." });
-    res.json({ content });
+  fs.readFile(essayPath, "utf8", (err, content) => {
+    if (err) return res.status(500).json({ error: "Failed to read essay file." });
+
+    const assessments = fs.existsSync(assessmentsPath)
+      ? JSON.parse(fs.readFileSync(assessmentsPath, "utf-8"))
+      : [];
+
+    const assessment = assessments.find(a => a.folder === folder);
+
+    let uploadFolder = folder;
+    let baseFilename = filename.replace(".txt", "");
+    let imageName = baseFilename + ".png";
+
+    if (assessment) {
+      uploadFolder = assessment.folder; // still fallback
+    }
+
+    // Try to find actual image name in the upload folder
+    const uploadDir = path.join(__dirname, "uploads", uploadFolder);
+    const matchingImage = fs.readdirSync(uploadDir).find(
+      file => file.startsWith(baseFilename) && /\.(jpg|jpeg|png)$/i.test(file)
+    );
+
+    if (matchingImage) {
+      imageName = matchingImage;
+    }
+
+    res.json({
+      content,
+      uploadFolder,
+      imageName
+    });
   });
 });
 
@@ -355,6 +389,24 @@ ${criteriaDescriptions}
     });
   }
 });
+
+// GET /graded-essays/:assessmentName
+app.get("/graded-essays/:assessmentName", (req, res) => {
+  const dir = path.join(__dirname, "data", "grades", req.params.assessmentName);
+  if (!fs.existsSync(dir)) return res.json([]);
+  const files = fs.readdirSync(dir).filter(f => f.endsWith(".json")).map(f => f.replace(".json", ""));
+  res.json(files);
+});
+
+// GET /grade/:assessmentName/:essayFile
+app.get("/grade/:assessmentName/:essayFile", (req, res) => {
+  const filePath = path.join(__dirname, "data", "grades", req.params.assessmentName, `${req.params.essayFile}.json`);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: "Grade not found" });
+
+  const raw = fs.readFileSync(filePath, "utf8");
+  res.json(JSON.parse(raw));
+});
+
 
 
 
